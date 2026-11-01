@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>配達管理</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--text:#111;--sub:#667;--line:#dde;--accent:#06c167;--danger:#d93025;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#0d0d0d;--card:#1b1b1b;--text:#f2f2f2;--sub:#9a9aa5;--line:#333;--accent:#1ed760}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;padding:0 0 88px}
+[hidden]{display:none!important}
+header.app{display:flex;justify-content:space-between;align-items:center;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;position:sticky;top:0;background:var(--bg);z-index:5}
+header.app h1{font-size:18px;margin:0}
+main{max-width:640px;margin:0 auto;padding:0 16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+.card .label{color:var(--sub);font-size:13px}
+.card .value{font-size:26px;font-weight:700;margin-top:4px}
+.btn{display:block;width:100%;min-height:52px;border:0;border-radius:14px;background:var(--accent);color:#000;font-size:17px;font-weight:700;cursor:pointer;padding:0 16px}
+.btn.sub{background:var(--card);color:var(--text);border:1px solid var(--line)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.small{min-height:40px;width:auto;font-size:14px;display:inline-block}
+.row{display:flex;gap:8px;margin:12px 0}.row>*{flex:1}
+label{display:block;font-size:13px;color:var(--sub);margin-top:12px}
+input,select,textarea{width:100%;min-height:48px;font-size:16px;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+nav.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav.tabs button{flex:1;background:none;border:0;padding:14px 0;color:var(--sub);font-size:16px;font-weight:600;cursor:pointer}
+nav.tabs button.on{color:var(--accent)}
+.item{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.meta{color:var(--sub);font-size:13px}.reward{font-size:20px;font-weight:700}
+.list{display:grid;gap:10px}
+dialog{width:min(92vw,560px);border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--text);padding:16px}
+dialog::backdrop{background:#0009}
+.empty{text-align:center;color:var(--sub);padding:32px 0}
+#login{padding-top:20vh;text-align:center}
+</style>
+</head>
+<body>
+
+<!-- ログイン画面 -->
+<main id="login" hidden>
+  <h1>🛵 配達管理</h1>
+  <p class="meta">売上・稼働を記録して時給を見える化</p>
+  <button id="btn-login" class="btn">Googleでログイン</button>
+  <p id="err" style="color:var(--danger)"></p>
+</main>
+
+<!-- アプリ本体 -->
+<div id="app" hidden>
+  <header class="app"><h1>🛵 配達管理</h1><button id="btn-logout" class="btn sub small">ログアウト</button></header>
+
+  <main id="v-dashboard">
+    <h2>本日</h2>
+    <div class="grid">
+      <div class="card"><div class="label">本日の売上</div><div class="value" id="c-reward">–</div></div>
+      <div class="card"><div class="label">本日の件数</div><div class="value" id="c-count">–</div></div>
+      <div class="card"><div class="label">本日の時給</div><div class="value" id="c-hourly">–</div></div>
+      <div class="card"><div class="label">稼働時間</div><div class="value" id="c-time">–</div></div>
+    </div>
+    <button class="btn" id="btn-add2">＋ 配達を記録する</button>
+  </main>
+
+  <main id="v-deliveries" hidden>
+    <button id="btn-add" class="btn">＋ 配達を記録</button>
+    <div class="row">
+      <input type="month" id="l-month" aria-label="月">
+      <select id="l-sort" aria-label="並び替え">
+        <option value="dateDesc">日付が新しい順</option><option value="dateAsc">日付が古い順</option>
+        <option value="reward">報酬が高い順</option><option value="distance">距離が長い順</option>
+      </select>
+    </div>
+    <div id="list" class="list"></div>
+  </main>
+
+  <main id="v-reports" hidden>
+    <h2>日別集計</h2><input type="date" id="r-day" aria-label="日付"><div class="grid" id="daily"></div>
+    <h2>月別集計</h2><input type="month" id="r-month" aria-label="月"><div class="grid" id="monthly"></div>
+  </main>
+
+  <nav class="tabs">
+    <button data-v="dashboard" class="on">ホーム</button>
+    <button data-v="deliveries">記録</button>
+    <button data-v="reports">集計</button>
+  </nav>
+
+  <dialog id="dlg">
+    <form id="form" method="dialog">
+      <h3 id="dlg-title"></h3>
+      <label>日付<input name="date" type="date" required></label>
+      <label>報酬(円)<input name="reward" type="number" inputmode="numeric" min="0" step="1" required></label>
+      <label>距離(km)<input name="distance" type="number" inputmode="decimal" min="0" step="0.1" required></label>
+      <label>店舗名<input name="pickupStore" type="text"></label>
+      <label>配達エリア<input name="area" type="text"></label>
+      <div class="row"><label>開始時刻<input name="startTime" type="time" required></label><label>終了時刻<input name="endTime" type="time" required></label></div>
+      <label>メモ<textarea name="memo" rows="2"></textarea></label>
+      <div class="row"><button type="button" id="btn-cancel" class="btn sub">キャンセル</button><button class="btn">保存</button></div>
+    </form>
+  </dialog>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+/* ===== Firebase設定: ここを自分の値に置き換える ===== */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  appId: "YOUR_APP_ID",
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const col = collection(db, "deliveries");
+
+/* ===== ユーティリティ ===== */
+const $ = (s) => document.querySelector(s);
+const pad = (n) => String(n).padStart(2, "0");
+const yen = (n) => "¥" + Math.round(n || 0).toLocaleString("ja-JP");
+const toDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => toDate(new Date());
+const fmtHM = (m) => `${Math.floor(m / 60)}時間${pad(m % 60)}分`;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const monthRange = (ym) => { const [y, m] = ym.split("-").map(Number); return [`${ym}-01`, `${ym}-${pad(new Date(y, m, 0).getDate())}`]; };
+function calcMinutes(s, e) {
+  if (!s || !e) return 0;
+  const [sh, sm] = s.split(":").map(Number), [eh, em] = e.split(":").map(Number);
+  let d = eh * 60 + em - (sh * 60 + sm);
+  return d < 0 ? d + 1440 : d; // 日跨ぎ対応
+}
+
+/* ===== データ層 (Firestore) ===== */
+// 複合インデックス: deliveries (userId ASC, date DESC) が必要
+async function fetchDeliveries(uid, from, to) {
+  const q = query(col, where("userId", "==", uid), where("date", ">=", from), where("date", "<=", to), orderBy("date", "desc"));
+  return (await getDocs(q)).docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+const createDelivery = (uid, v) => addDoc(col, { ...v, userId: uid, workMinutes: calcMinutes(v.startTime, v.endTime), createdAt: serverTimestamp() });
+const updateDelivery = (id, uid, v) => updateDoc(doc(db, "deliveries", id), { ...v, userId: uid, workMinutes: calcMinutes(v.startTime, v.endTime) });
+const removeDelivery = (id) => deleteDoc(doc(db, "deliveries", id));
+
+function summarize(list) {
+  const reward = list.reduce((s, d) => s + (d.reward || 0), 0);
+  const minutes = list.reduce((s, d) => s + (d.workMinutes || 0), 0);
+  const distance = list.reduce((s, d) => s + (d.distance || 0), 0);
+  return { count: list.length, reward, minutes, distance, avg: list.length ? reward / list.length : 0, hourly: minutes ? reward / (minutes / 60) : 0 };
+}
+
+/* ===== 認証 ===== */
+let user = null;
+$("#btn-login").onclick = async () => {
+  try {
+    const { user: u } = await signInWithPopup(auth, new GoogleAuthProvider());
+    const ref = doc(db, "users", u.uid);
+    if (!(await getDoc(ref)).exists())
+      await setDoc(ref, { uid: u.uid, displayName: u.displayName ?? "", email: u.email ?? "", createdAt: serverTimestamp() });
+  } catch (e) { $("#err").textContent = "ログインに失敗しました: " + e.code; }
+};
+$("#btn-logout").onclick = () => signOut(auth);
+onAuthStateChanged(auth, (u) => {
+  user = u;
+  $("#login").hidden = !!u;
+  $("#app").hidden = !u;
+  if (u) show("dashboard");
+});
+
+/* ===== 画面切替 ===== */
+function show(name) {
+  for (const v of ["dashboard", "deliveries", "reports"]) $("#v-" + v).hidden = v !== name;
+  document.querySelectorAll("nav.tabs button").forEach((b) => b.classList.toggle("on", b.dataset.v === name));
+  if (name === "dashboard") loadDashboard();
+  if (name === "deliveries") loadList();
+  if (name === "reports") { loadDaily(); loadMonthly(); }
+}
+document.querySelectorAll("nav.tabs button").forEach((b) => (b.onclick = () => show(b.dataset.v)));
+
+/* ===== ダッシュボード ===== */
+async function loadDashboard() {
+  const s = summarize(await fetchDeliveries(user.uid, today(), today()));
+  $("#c-reward").textContent = yen(s.reward);
+  $("#c-count").textContent = s.count + " 件";
+  $("#c-hourly").textContent = yen(s.hourly);
+  $("#c-time").textContent = fmtHM(s.minutes);
+}
+
+/* ===== 記録一覧・登録・編集・削除 ===== */
+let rows = [], editingId = null;
+$("#l-month").value = today().slice(0, 7);
+const SORTS = {
+  dateDesc: (a, b) => b.date.localeCompare(a.date) || (b.startTime || "").localeCompare(a.startTime || ""),
+  dateAsc: (a, b) => a.date.localeCompare(b.date) || (a.startTime || "").localeCompare(b.startTime || ""),
+  reward: (a, b) => b.reward - a.reward,
+  distance: (a, b) => b.distance - a.distance,
+};
+async function loadList() {
+  const [from, to] = monthRange($("#l-month").value);
+  rows = await fetchDeliveries(user.uid, from, to);
+  renderList();
+}
+function renderList() {
+  const list = [...rows].sort(SORTS[$("#l-sort").value]);
+  $("#list").innerHTML = list.length ? list.map((d) => `
+    <div class="card item">
+      <div><div class="meta">${esc(d.date)} ${esc(d.startTime)}–${esc(d.endTime)}</div>
+        <div>${esc(d.pickupStore) || "(店舗名なし)"}</div>
+        <div class="meta">${d.distance} km${d.area ? "・" + esc(d.area) : ""}</div></div>
+      <div style="text-align:right"><div class="reward">${yen(d.reward)}</div>
+        <button class="btn sub small" data-edit="${d.id}">編集</button>
+        <button class="btn danger small" data-del="${d.id}">削除</button></div>
+    </div>`).join("") : `<div class="empty">記録がありません</div>`;
+}
+const FIELDS = ["date", "reward", "distance", "pickupStore", "area", "startTime", "endTime", "memo"];
+function openForm(d) {
+  editingId = d?.id ?? null;
+  $("#dlg-title").textContent = d ? "記録を編集" : "配達を記録";
+  const v = d ?? { date: today(), reward: "", distance: "", pickupStore: "", area: "", startTime: "", endTime: "", memo: "" };
+  FIELDS.forEach((k) => ($("#form").elements[k].value = v[k]));
+  $("#dlg").showModal();
+}
+$("#btn-add").onclick = $("#btn-add2").onclick = () => openForm();
+$("#btn-cancel").onclick = () => $("#dlg").close();
+$("#l-month").onchange = loadList;
+$("#l-sort").onchange = renderList;
+$("#list").onclick = async (e) => {
+  const { edit, del } = e.target.dataset;
+  if (edit) openForm(rows.find((r) => r.id === edit));
+  if (del && confirm("この記録を削除しますか？")) { await removeDelivery(del); loadList(); }
+};
+$("#form").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = $("#form").elements;
+  const data = {
+    date: f.date.value, reward: Number(f.reward.value), distance: Number(f.distance.value),
+    pickupStore: f.pickupStore.value.trim(), area: f.area.value.trim(),
+    startTime: f.startTime.value, endTime: f.endTime.value, memo: f.memo.value.trim(),
+  };
+  try {
+    editingId ? await updateDelivery(editingId, user.uid, data) : await createDelivery(user.uid, data);
+    $("#dlg").close();
+    $("#l-month").value = data.date.slice(0, 7);
+    show("deliveries");
+  } catch (err) { alert("保存に失敗しました: " + err.message); }
+};
+
+/* ===== 日別・月別集計 ===== */
+const card = (l, v) => `<div class="card"><div class="label">${l}</div><div class="value">${v}</div></div>`;
+$("#r-day").value = today();
+$("#r-month").value = today().slice(0, 7);
+async function loadDaily() {
+  const d = $("#r-day").value;
+  const s = summarize(await fetchDeliveries(user.uid, d, d));
+  $("#daily").innerHTML = card("総売上", yen(s.reward)) + card("件数", s.count + " 件") + card("平均単価", yen(s.avg)) + card("稼働時間", fmtHM(s.minutes)) + card("時給", yen(s.hourly));
+}
+async function loadMonthly() {
+  const [from, to] = monthRange($("#r-month").value);
+  const s = summarize(await fetchDeliveries(user.uid, from, to));
+  $("#monthly").innerHTML = card("月売上", yen(s.reward)) + card("月件数", s.count + " 件") + card("月平均時給", yen(s.hourly)) + card("総距離", s.distance.toFixed(1) + " km");
+}
+$("#r-day").onchange = loadDaily;
+$("#r-month").onchange = loadMonthly;
+</script>
+</body>
+</html>
